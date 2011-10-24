@@ -1,0 +1,23 @@
+{application, websinema, [
+
+    {description, "WebSiNeMa - An SNMP metrics visualization web frontend"},
+    {mod, {websinema_app, []}},
+    {registered, [websinema]},
+    {vsn, "0.0"},
+    
+    {applications, [
+        kernel,
+        stdlib,
+        sasl,
+        lager,
+        inets,
+        crypto,
+        public_key,
+        ssl,
+        cowboy,
+        snmp
+    ]},
+    
+    {env, []}
+
+]}.
