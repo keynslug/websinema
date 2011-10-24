@@ -1,0 +1,57 @@
+div.chartLabel {
+    font-weight: bold;
+    display: inline-block;
+    padding-top: 5px;
+    padding-left: 12px;
+    padding-right: 4px;
+    height: 100%;
+    border: solid 1px #ddd;
+    background: #ddd;
+    border-bottom: 0;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 12px;
+}
+
+div.chartLabel .after {
+    display: inline;
+    background: transparent;
+    position: relative;
+    top: -14px;
+    left: 29px;
+    border: hidden;
+    border-bottom: 26px solid #ddd;
+    border-right: 26px solid transparent;
+}
+
+div.chartHeader {
+    margin-top: 12px;
+}
+
+div.chartContainer {
+    border: solid 1px #ddd;
+    margin-bottom: 12px;
+}
+
+div.chartsView {
+    padding-left: 5%;
+    padding-right: 5%;
+}
+
+div.labelContainer {
+    display: table;
+}
+
+div.genericLabel {
+    display: table-cell;
+    vertical-align: middle;
+    text-align: center;
+    font-size: 2.0em;
+    font-weight: bold;
+    opacity: 0.8;
+}
+
+div.clock {
+    font-family: monospace;
+    letter-spacing: 2px;
+    font-size: 2.4em;
+}
