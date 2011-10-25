@@ -29,6 +29,8 @@
     dismiss/2,
     discover/2,
     discover/3,
+    suspend/2,
+    resume/2,
     examine/3,
     examine/4,
     examine/5
@@ -73,6 +75,12 @@ discover(Name, AgentName) ->
 discover(Name, AgentName, Options) ->
     async(Name, {discover_agent, AgentName, Options}).
 
+suspend(Name, View) ->
+    async(Name, {suspend_view, View}).
+
+resume(Name, View) ->
+    async(Name, {resume_view, View}).
+
 examine(Name, View, Scope) ->
     examine(Name, View, Scope, average).
 
@@ -99,7 +107,8 @@ examine(Name, View, Scope, Aggregate, Options) ->
     {config, [{dir, Dir}, {db_dir, Dir}, {verbosity, V}]},
     {observation, [
         {interval, 1000},
-        {backlog, 600}, 
+        {backlog, 1000},
+        {suspended, true},
         {rules, [
             {integer, {watch, buffer}},
             {ticks, {watch, actual}},
@@ -204,7 +213,7 @@ start(mibs, Options, State) ->
     Fixed = proplists:get_value(mibs, Options, []),
     Versions = proplists:get_value(versions, proplists:get_value(options, State), []),
     Relevant = [ E || {any, L} <- ?MIBS, E <- L ] ++ [ E || {V, L} <- ?MIBS, E <- L, V0 <- Versions, V =:= V0 ],
-    Files = expand_mib_filenames(local, Fixed) ++ expand_mib_filenames(global, Relevant),
+    Files = expand_mib_filenames(fixed, Fixed) ++ expand_mib_filenames(global, Relevant),
     Result = [ {E, snmpm:load_mib(E)} || E <- Files ],
     Loaded = [ E || {E, ok} <- Result ],
     [ lager:error("Mib binary ~p failed to load properly because of ~p", [E, Reason]) || {E, {error, Reason}} <- Result ],
@@ -317,6 +326,26 @@ request({examine_view, View, Scope, Aggregate, Options}, #state{agents = Agents}
                end,
     {ok, {ok, lists:map(Examiner, Expanded)}};
 
+request({suspend_view, View}, #state{agents = Agents}) ->
+    Expanded = expand_view(View, [], Agents, []),
+    Suspend = fun ({Name, Ids}) ->
+                        Observers = websinema_utilities:propget([Name, observers], Agents),
+                        lists:foreach(fun (Id) -> activate_one(Id, suspend, Observers) end, Ids),
+                        ok
+               end,
+    lists:foreach(Suspend, Expanded),
+    {ok, ok};
+
+request({resume_view, View}, #state{agents = Agents}) ->
+    Expanded = expand_view(View, [], Agents, []),
+    Suspend = fun ({Name, Ids}) ->
+                        Observers = websinema_utilities:propget([Name, observers], Agents),
+                        lists:foreach(fun (Id) -> activate_one(Id, resume, Observers) end, Ids),
+                        ok
+               end,
+    lists:foreach(Suspend, Expanded),
+    {ok, ok};
+
 %% Debug purpose
 
 request(state, State) ->
@@ -410,17 +439,27 @@ assert_bindings(Name, Agent) ->
     end.
 
 expand_mib_filenames(Where, Mibs) ->
-    Path = expand_mib_path(Where),
-    [ Path ++ "/mibs/" ++ E ++ ".bin" || E <- Mibs ].
+    FixedPath = expand_mib_path(Where),
+    [ expand_mib_path(There) ++ "/mibs/" ++ E ++ ".bin" || {There, E} <- Mibs ] ++
+    [ FixedPath ++ "/mibs/" ++ E ++ ".bin" || E <- Mibs, not is_tuple(E) ].
 
-expand_mib_path(local)  -> websinema:priv();
-expand_mib_path(global) -> code:priv_dir(snmp).
+expand_mib_path(fixed)  -> websinema:priv();
+expand_mib_path(global) -> code:priv_dir(snmp);
+expand_mib_path(App)    -> code:priv_dir(App).
 
 examine_one(Id, Scope, Aggregation, Bindings, Observers) ->
     case websinema_utilities:propget([Id], Observers) of
         Pid when is_pid(Pid) ->
             {Type, _} = websinema_utilities:propget([Id], Bindings),
             {value, Type, websinema_observer:metrics(Pid, Scope, Aggregation)};
+        Error ->
+            Error
+    end.
+
+activate_one(Id, Action, Observers) ->
+    case websinema_utilities:propget([Id], Observers) of
+        Pid when is_pid(Pid) ->
+            websinema_observer:Action(Pid);
         Error ->
             Error
     end.

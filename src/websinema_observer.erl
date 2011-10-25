@@ -16,7 +16,7 @@
 -module(websinema_observer).
 -behaviour(gen_server).
 
--export([start_link/3, stop/1, metrics/3]).
+-export([start_link/3, stop/1, metrics/3, suspend/1, resume/1]).
 -export([init/1, terminate/2, code_change/3, handle_call/3, handle_cast/2, handle_info/2]).
 
 -record(state, {
@@ -28,7 +28,8 @@
     backlog,
     buffer,
     timer,
-    worker
+    worker,
+    suspension = false
 }).
 
 %% Public API
@@ -40,6 +41,12 @@ start_link(Oid, Value, Options) ->
 stop(Pid) ->
     gen_server:call(Pid, {shutdown, normal}, infinity).
 
+suspend(Pid) ->
+    gen_server:cast(Pid, suspend).
+
+resume(Pid) ->
+    gen_server:cast(Pid, resume).
+
 metrics(Pid, Scope, Aggregation) ->
     gen_server:call(Pid, {metrics, Scope, Aggregation}).
 
@@ -49,8 +56,8 @@ init({Oid, {Type, Value}, Options}) ->
     lager:info("Initializing new websinema observer on ~p...", [websinema_bindings:varalias(Oid)]),
     process_flag(trap_exit, true),
     
-    [User, Agent, Rules, Interval, Backlog] = 
-        websinema_utilities:propvalues([user, agent, rules, interval, backlog], Options),
+    [User, Agent, Rules, Interval, Backlog, Suspend] = 
+        websinema_utilities:propvalues([user, agent, rules, interval, backlog, suspended], Options),
     Rule = websinema_utilities:propget([Type], Rules, {poll, actual}),
     State = #state{
         user = User,
@@ -59,6 +66,7 @@ init({Oid, {Type, Value}, Options}) ->
         rule = Rule,
         interval = Interval,
         backlog = Backlog,
+        suspension = case Suspend of true -> 0; _ -> none end,
         buffer = [do_store(Value)]
     },
     
@@ -84,9 +92,30 @@ handle_call(Request, From, State) ->
     lager:error("Unexpected call ~p received from ~p", [Request, From]),
     {noreply, State, hibernate}.
 
+handle_cast(suspend, State = #state{suspension = 0, oid = Oid}) ->
+    lager:debug("Observer on ~p already suspended", [Oid]),
+    {noreply, State, hibernate};
+
+handle_cast(suspend, State = #state{suspension = Refs, oid = Oid}) when is_integer(Refs) ->
+    lager:debug("Suspending observer on ~p ...", [Oid]),
+    {noreply, State#state{suspension = Refs - 1}, hibernate};
+
+handle_cast(suspend, State) ->
+    {noreply, State, hibernate};
+
+handle_cast(resume, State = #state{suspension = Refs, oid = Oid}) when is_integer(Refs) ->
+    lager:debug("Reactivating observer on ~p ...", [Oid]),
+    {noreply, State#state{suspension = Refs + 1}, hibernate};
+
+handle_cast(resume, State) ->
+    {noreply, State, hibernate};
+
 handle_cast(Request, State) ->
     lager:error("Unexpected cast ~p received", [Request]),
     {noreply, State, hibernate}.
+
+handle_info(watchtime, State = #state{suspension = 0}) ->
+    {noreply, State, hibernate};
 
 handle_info(watchtime, State = #state{buffer = Buffer, worker = Worker, oid = Oid}) ->
     case Worker(Buffer) of

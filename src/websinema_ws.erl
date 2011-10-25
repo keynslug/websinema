@@ -76,9 +76,10 @@ websocket_info(Unexpected, Request, State) ->
     lager:error("Websocket instance received unexpected message: ~p", [Unexpected]),
     {ok, Request, State, hibernate}.
 
-websocket_terminate(Reason, _Request, #ws_state{interval = Interval}) ->
+websocket_terminate(Reason, _Request, #ws_state{interval = Interval, subscription = Subscription, aggregator = Aggregator}) ->
     lager:info("Websocket client released because of ~p", [Reason]),
     timer:cancel(Interval),
+    do_suspend(Aggregator, Subscription),
     ok.
 
 %% Handlers
@@ -98,11 +99,13 @@ handle_request(<<"discover">>, Args, #ws_state{aggregator = Aggregator}) ->
     end;
 
 handle_request(<<"subscribe">>, Args, State = #ws_state{aggregator = Aggregator, subscription = WasSubscription, interval = WasInterval, timer = WasTimer}) ->
-    Ids = proplists:get_value(<<"sids">>, Args),
-    Interval = proplists:get_value(<<"i">>, Args),
+    [Ids, NewInterval] = websinema_utilities:propvalues([<<"sids">>, <<"i">>], Args),
+    {Pushed, Polled, Subscription} = lists:foldl(fun alter_subscription/2, {[], [], WasSubscription}, Ids),
+    do_resume(Aggregator, Pushed),
+    do_suspend(Aggregator, Polled),
+    Interval = case empty_subscription(Subscription) of true -> 0; _ -> NewInterval end,
     Timer = alter_timer(WasTimer, WasInterval, Interval, {self(), resend}),
-    {Fresh, Subscription} = lists:foldl(fun alter_subscription/2, {[], WasSubscription}, Ids),
-    Response = do_examine(Aggregator, Fresh, every, list),
+    Response = do_examine(Aggregator, Pushed, every, list),
     {ok, Response, State#ws_state{interval = Interval, subscription = Subscription, timer = Timer}};
 
 handle_request(Request, _, _) ->
@@ -169,7 +172,7 @@ request(Request) ->
 
 respond(Reply) ->
     try 
-        lager:debug("Reply: ~p", [Reply]),
+        %% lager:debug("Reply: ~p", [Reply]),
         {ok, Json} = json:encode(do_respond(Reply)),
         Json
     catch 
@@ -199,21 +202,33 @@ do_examine(Aggregator, Bindings, Scope, Aggregation) ->
         Error        -> Error
     end.
 
+do_resume(Aggregator, Bindings) ->
+    websinema_aggregator:resume(Aggregator, Bindings).
+
+do_suspend(Aggregator, Bindings) ->
+    websinema_aggregator:suspend(Aggregator, Bindings).
+
+empty_subscription(Subscription) ->
+    {_, Lists} = lists:unzip(Subscription),
+    lists:append(Lists) =:= [].
+
 alter_subscription({Entry}, Subscription) ->
     [NameBin, IdBin, On] = websinema_utilities:propvalues([<<"a">>, <<"sid">>, <<"on">>], Entry),
     Name = binary_to_list(NameBin),
     Id = [ binary_to_atom(E, utf8) || E <- IdBin ],
     alter_subscription(Name, Id, On, Subscription).
 
-alter_subscription(Name, Id, On, {Acc0, Subscription}) ->
+alter_subscription(Name, Id, On, {Pushed0, Polled0, Subscription}) ->
     InitialSubs = lists:delete(Id, websinema_utilities:propget([Name], Subscription, [])),
-    {Acc, Subs} = case On of
-        false -> {Acc0, InitialSubs};
+    {Pushed, Polled, Subs} = case On of
+        false -> 
+            P = websinema_utilities:propappend([Name], Id, Polled0),
+            {Pushed0, P, InitialSubs};
         true  ->
-            A = websinema_utilities:propappend([Name], Id, Acc0),
-            {A, [Id | InitialSubs]}
+            P = websinema_utilities:propappend([Name], Id, Pushed0),
+            {P, Polled0, [Id | InitialSubs]}
     end,
-    {Acc, websinema_utilities:propset([Name], Subs, Subscription)}.
+    {Pushed, Polled, websinema_utilities:propset([Name], Subs, Subscription)}.
 
 alter_timer(Was, WasInterval, WasInterval, _) ->
     Was;
