@@ -85,26 +85,49 @@ Ext.define('Websinema.model.Agent', {
                 }
                 return;
             }
-            var count, model = {
-                date: metric.ts,
-                value: metric.value
-            };
-            switch (node.raw.type) {
+            var count = store.count(), type = node.raw.type, model;
+            if (metric.error) {
+                store.notAccessible = true;
+                model = {
+                    date: new Date(),
+                    value: this.defaultValue(store, type)
+                };
+            }
+            else {
+                store.notAccessible = false;
+                model = {
+                    date: metric.ts,
+                    value: metric.value
+                };
+            }
+            switch (type) {
                 case 'integer':
                     store.add(model);
-                    count = store.count();
                     if (count > 1024) {
                         store.removeAt(0);
-                    } 
-                break;
+                    }
+                    break;
                 default:
                     if (store.count()) {
                         store.first().set(model);
-                    } else {
+                    }
+                    else {
                         store.add(model);
                     }
-                break;
+                    break;
             }
+        }
+    },
+    
+    defaultValue: function (store, type) {
+        switch (type) {
+            case 'integer': 
+            case 'ticks': 
+            case 'timestamp': 
+                return 0;
+            default:
+                var last = store.last();
+                return last ? store.last().get('value') : '';
         }
     }
 });

@@ -17,7 +17,7 @@
 
 %% Exports
 
--export([discover/2, examine/3, varalias/1, varaliases/1, varname/1, varoid/1]).
+-export([discover/2, discover/4, examine/3, examine/4, varalias/1, varaliases/1, varname/1, varoid/1]).
 
 %% Public API
 
@@ -35,7 +35,10 @@ discover(User, Agent, Options) ->
     end.
 
 examine(User, Agent, Oids) ->
-    case snmpm:sync_get(User, Agent, Oids) of
+    examine(User, Agent, Oids, 5000).
+
+examine(User, Agent, Oids, Timeout) ->
+    case snmpm:sync_get(User, Agent, Oids, Timeout) of
         {ok, Pdu, _}   -> objects(Pdu);
         {error, Error} -> throw(Error)
     end.
@@ -54,16 +57,20 @@ varalias(ID = [I|_]) when is_integer(I) ->
 varalias(Invalid) ->
     throw({invalid_oid, Invalid}).
 
-varoid(L = [H | _]) when is_integer(H) ->
+varoid(L) ->
+    varoid(L, []).
+
+varoid(L = [H | _], _) when is_integer(H) ->
     L;
 
-varoid(L = [H | _]) when is_atom(H) ->
-    case snmpm:name_to_oid(lists:last(L)) of
-        {ok, [Id]} -> Id;
-        _Error     -> L
+varoid(L = [H | _], Acc) when is_atom(H) ->
+    [Last | Rev] = lists:reverse(L),
+    case snmpm:name_to_oid(Last) of
+        {ok, [Id]} -> Id ++ Acc;
+        _Error     -> varoid(lists:reverse(Rev), [Last | Acc])
     end;
 
-varoid(Invalid) ->
+varoid(Invalid, _) ->
     throw({invalid_name, Invalid}).
 
 varname(List) when is_list(List) ->
@@ -74,37 +81,44 @@ varname(List) when is_list(List) ->
 discover(A = {User, Agent}, OID, Tree, Options) ->
     case snmpm:sync_get_next(User, Agent, [OID]) of
         {ok, Pdu, _} -> 
-            case object(Pdu) of
-                {NextOID, ignore} -> 
+            case object(Pdu, relax) of
+                {error, {object_ignored, NextOID}} -> 
+                    discover(A, NextOID, Tree, Options);
+                {error, finish} ->
+                    Tree;
+                {error, _} ->
+                    [_, Last | Rest] = lists:reverse(OID),
+                    NextOID = lists:reverse([Last + 1 | Rest]),
                     discover(A, NextOID, Tree, Options);
                 {NextOID, Object} ->
-                    discover(A, NextOID, [{NextOID, Object} | Tree], Options);
-                _ ->
-                    Tree
+                    discover(A, NextOID, [{NextOID, Object} | Tree], Options)
             end;
         Error     -> throw(Error)
     end.
 
 objects({noError, _, Objects}) when is_list(Objects) ->
-    [ Object || Object = {_, Value} <- [ object(O) || O <- Objects ], Value =/= ignore ];
+    [ Object || Object = {_, Value} <- [ object(O, suicide) || O <- Objects ], Value =/= ignore ];
 objects(Error) ->
     throw(Error).
 
-object({noError, _, [Object]}) ->
-    object(Object);
-object({varbind, OID, _, noSuchObject, _}) ->
-    throw({no_object, varalias(OID)});
-object({varbind, OID, _, noSuchInstance, _}) ->
-    throw({no_instance, varalias(OID)});
-object({varbind, _, _, endOfMibView, _}) ->
-    finish;
-object({varbind, OID, Type, Value, _}) ->
+object({noError, _, [Object]}, Failover) ->
+    object(Object, Failover);
+object({varbind, OID, _, noSuchObject, _}, Failover) ->
+    failover(Failover, {no_object, varalias(OID)});
+object({varbind, OID, _, noSuchInstance, _}, Failover) ->
+    failover(Failover, {no_instance, varalias(OID)});
+object({varbind, _, _, endOfMibView, _}, Failover) ->
+    failover(Failover, finish);
+object({varbind, OID, Type, Value, _}, Failover) ->
     case vartype(Type) of
-        ignore     -> {OID, ignore};
+        ignore     -> failover(Failover, {object_ignored, OID});
         NativeType -> {OID, {NativeType, Value}}
     end;
-object(Error) ->
-    throw(Error).
+object(Error, Failover) ->
+    failover(Failover, Error).
+
+failover(relax, Error) -> {error, Error};
+failover(_, Error) -> throw(Error).
 
 varalias([H|T], Acc) ->
     {L, R} = varalias(T, Acc),
@@ -124,6 +138,7 @@ vartype('TimeTicks') -> ticks;
 vartype('TimeStamp') -> timestamp;
 vartype('INTEGER') -> integer;
 vartype('Integer32') -> integer;
+vartype('Unsigned32') -> integer;
 vartype('Counter32') -> integer;
 
 vartype(_Another) -> ignore.

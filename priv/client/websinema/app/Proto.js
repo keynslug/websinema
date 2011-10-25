@@ -79,7 +79,7 @@ Ext.define('Websinema.Proto', {
     dispatchData: function (data) {
         var handler, tag, message = data.message;
         if (!data.status && this.errorHandler) {
-            return this.errorHandler(proto, data);
+            return this.errorHandler(message ? message.tag : 'dispatch', data);
         }
         if (message && (tag = message.tag)) {
             console.debug("Proxy handler: got a message through '" + tag + "':", message);

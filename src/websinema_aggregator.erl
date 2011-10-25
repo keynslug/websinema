@@ -109,6 +109,7 @@ examine(Name, View, Scope, Aggregate, Options) ->
         {interval, 1000},
         {backlog, 1000},
         {suspended, true},
+        {failover, true},
         {rules, [
             {integer, {watch, buffer}},
             {ticks, {watch, actual}},
@@ -320,8 +321,7 @@ request({examine_view, View, Scope, Aggregate, Options}, #state{agents = Agents}
     Expanded = expand_view(View, Ignored, Agents, []),
     Examiner = fun ({Name, Ids}) ->
                         Observers = websinema_utilities:propget([Name, observers], Agents),
-                        Bindings = websinema_utilities:propget([Name, bindings], Agents),
-                        Values = lists:map(fun (Id) -> {Id, examine_one(Id, Scope, Aggregate, Bindings, Observers)} end, Ids),
+                        Values = lists:map(fun (Id) -> {Id, examine_one(Id, Scope, Aggregate, Observers)} end, Ids),
                         {Name, xform_view(Values, Options)}
                end,
     {ok, {ok, lists:map(Examiner, Expanded)}};
@@ -447,11 +447,10 @@ expand_mib_path(fixed)  -> websinema:priv();
 expand_mib_path(global) -> code:priv_dir(snmp);
 expand_mib_path(App)    -> code:priv_dir(App).
 
-examine_one(Id, Scope, Aggregation, Bindings, Observers) ->
+examine_one(Id, Scope, Aggregation, Observers) ->
     case websinema_utilities:propget([Id], Observers) of
         Pid when is_pid(Pid) ->
-            {Type, _} = websinema_utilities:propget([Id], Bindings),
-            {value, Type, websinema_observer:metrics(Pid, Scope, Aggregation)};
+            websinema_observer:metrics(Pid, Scope, Aggregation);
         Error ->
             Error
     end.

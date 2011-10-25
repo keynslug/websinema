@@ -215,7 +215,7 @@ empty_subscription(Subscription) ->
 alter_subscription({Entry}, Subscription) ->
     [NameBin, IdBin, On] = websinema_utilities:propvalues([<<"a">>, <<"sid">>, <<"on">>], Entry),
     Name = binary_to_list(NameBin),
-    Id = [ binary_to_atom(E, utf8) || E <- IdBin ],
+    Id = decode(oid, IdBin),
     alter_subscription(Name, Id, On, Subscription).
 
 alter_subscription(Name, Id, On, {Pushed0, Polled0, Subscription}) ->
@@ -229,6 +229,13 @@ alter_subscription(Name, Id, On, {Pushed0, Polled0, Subscription}) ->
             {P, Polled0, [Id | InitialSubs]}
     end,
     {Pushed, Polled, websinema_utilities:propset([Name], Subs, Subscription)}.
+
+decode(oid, []) ->
+    [];
+decode(oid, [Part | Rest]) when is_binary(Part) ->
+    [binary_to_atom(Part, utf8) | decode(oid, Rest)];
+decode(oid, [Part | Rest])  ->
+    [Part | decode(oid, Rest)].
 
 alter_timer(Was, WasInterval, WasInterval, _) ->
     Was;

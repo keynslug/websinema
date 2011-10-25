@@ -46,7 +46,7 @@ Ext.define('Websinema.view.Charts', {
         
         header: {
             height: 24,
-            create: function(agentName, metric) {
+            create: function (agentName, metric) {
                 return Ext.create('Ext.Component', {
                     height: 24,
                     border: 0,
@@ -68,9 +68,36 @@ Ext.define('Websinema.view.Charts', {
             }
         },
         
+        placeholder: {
+            create: function (height) {
+                var h = height - 24 * 2;
+                return Ext.create('Ext.Component', {
+                    border: 0,
+                    height: 0,
+                    placeholderRendered: false,
+                    cls: 'chartNaPlaceholder',
+                    html: Ext.String.format(
+                        '<div class="chartNaPlaceholderInner" style="height:{0}px; line-height:{0}px">not accessible</div>', 
+                        h
+                    )
+                });
+            },
+            render: function (object, state) {
+                object.placeholderRendered = state;
+                new Ext.fx.Anim({
+                    target: object,
+                    duration: 1000,
+                    to: {
+                        opacity: state ? 0.7 : 0.0
+                    }
+                });
+            }
+        },
+        
         chart: {
             height: 360,
             scope: 60,
+            context: this,
             bounds: function (store, interval) {
                 var toDate, fromDate, fresh = store.last();
                 toDate = fresh ? fresh.get('date') : Ext.Date.add(new Date(), Ext.Date.SECOND, -1);
@@ -136,7 +163,7 @@ Ext.define('Websinema.view.Charts', {
                         yField: 'value',
                         fill: true,
                         showMarkers: true,
-                        smooth: false,
+                        smooth: 3,
                         markerConfig: {
                             type: 'circle',
                             radius: 1
@@ -295,6 +322,7 @@ Ext.define('Websinema.view.Charts', {
         if (type && rs[agentName][metric.id] === undefined) {
             rs[agentName][metric.id] = renderer = {}; 
             renderer.type = type;
+            renderer.metric = metric;
             renderer.owner = Ext.create('Ext.panel.Panel', {
                 border: 0,
                 layout: {
@@ -305,9 +333,11 @@ Ext.define('Websinema.view.Charts', {
                 height: this.renderers[type].height
             });
             renderer.header = this.renderers.header.create(agentName, metric);
+            renderer.placeholder = this.renderers.placeholder.create(this.renderers[type].height);
             renderer.container = this.renderers.container.create();
             renderer.object = this.renderers[type].create(agentName, metric);
             renderer.owner.add(renderer.header);
+            renderer.owner.add(renderer.placeholder);
             renderer.owner.add(renderer.container);
             renderer.container.add(renderer.object);
             this.add(renderer.owner);
@@ -331,6 +361,11 @@ Ext.define('Websinema.view.Charts', {
                         o = rs[i][j];
                         r = this.renderers[o.type]
                         if (o.object && r.refresh) {
+                            if (o.metric) {
+                                if (o.metric.store.notAccessible ^ o.placeholder.placeholderRendered) {
+                                    this.renderers.placeholder.render(o.placeholder, o.metric.store.notAccessible);
+                                }
+                            }
                             r.refresh(o.object, interval);
                         }
                     }

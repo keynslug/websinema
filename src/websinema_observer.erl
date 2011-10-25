@@ -23,13 +23,14 @@
     user,
     agent,
     oid,
+    type,
     rule,
     interval,
     backlog,
     buffer,
     timer,
-    worker,
-    suspension = false
+    suspension = false,
+    failover = false
 }).
 
 %% Public API
@@ -56,23 +57,24 @@ init({Oid, {Type, Value}, Options}) ->
     lager:info("Initializing new websinema observer on ~p...", [websinema_bindings:varalias(Oid)]),
     process_flag(trap_exit, true),
     
-    [User, Agent, Rules, Interval, Backlog, Suspend] = 
-        websinema_utilities:propvalues([user, agent, rules, interval, backlog, suspended], Options),
+    [User, Agent, Rules, Interval, Backlog, Suspend, Failover] = 
+        websinema_utilities:propvalues([user, agent, rules, interval, backlog, suspended, failover], Options),
     Rule = websinema_utilities:propget([Type], Rules, {poll, actual}),
     State = #state{
         user = User,
         agent = Agent, 
-        oid = Oid, 
+        oid = Oid,
+        type = Type,
         rule = Rule,
         interval = Interval,
         backlog = Backlog,
         suspension = case Suspend of true -> 0; _ -> none end,
+        failover = (Failover =:= true),
         buffer = [do_store(Value)]
     },
     
     Timer = do_watchtime(self(), State),
-    Worker = do_observe(State),
-    {ok, State#state{worker = Worker, timer = Timer}, hibernate}.
+    {ok, State#state{timer = Timer}, hibernate}.
 
 terminate(Reason, #state{timer = Timer}) ->
     lager:info("Shutting down (~p) a websinema observer...", [Reason]),
@@ -85,8 +87,16 @@ code_change(_WasVersion, State, _Extra) ->
 handle_call({shutdown, Reason}, _From, State) ->
     {stop, Reason, ok, State};
 
-handle_call({metrics, Scope, Agg}, _, State = #state{buffer = Buffer}) ->
-    {reply, fetch(Buffer, Scope, Agg), State, hibernate};
+handle_call({metrics, Scope, Agg}, _, State = #state{buffer = Buffer, type = Type, failover = Failover}) ->
+    case fetch(Buffer, Scope, Agg) of
+        Error = {error, _} ->
+            case Failover of
+                true  -> {reply, Error, State, hibernate};
+                false -> {stop, Error, Error, State}
+            end;
+        Value ->
+            {reply, {value, Type, Value}, State, hibernate}
+    end;
 
 handle_call(Request, From, State) ->
     lager:error("Unexpected call ~p received from ~p", [Request, From]),
@@ -117,14 +127,22 @@ handle_cast(Request, State) ->
 handle_info(watchtime, State = #state{suspension = 0}) ->
     {noreply, State, hibernate};
 
-handle_info(watchtime, State = #state{buffer = Buffer, worker = Worker, oid = Oid}) ->
-    case Worker(Buffer) of
-        {ok, FreshBuffer} ->
-            {noreply, State#state{buffer = FreshBuffer}, hibernate};
-        Error ->
-            lager:error("Error arised while observing ~p: ~p", [websinema_bindings:varalias(Oid), Error]),
-            {stop, {error, not_accessible}, State}
-    end;
+handle_info(watchtime, State = #state{oid = Oid, user = User, agent = Agent, interval = Interval}) ->
+    Self = self(),
+    Ts = timestamp(),
+    spawn(fun () -> Self ! {polled, Ts, do_observe(User, Agent, Oid, Interval)} end),
+    {noreply, State, hibernate};
+
+handle_info({polled, Ts, What}, State = #state{buffer = Buffer, oid = Oid}) ->
+    FreshBuffer = 
+        case What of
+            {ok, Value} ->
+                do_store({Ts, Value}, Buffer, State);
+            Error ->
+                lager:error("Error arised while observing ~p: ~p", [websinema_bindings:varalias(Oid), Error]),
+                {error, not_accessible}
+        end,
+    {noreply, State#state{buffer = FreshBuffer}, hibernate};
 
 handle_info(Message, State) ->
     lager:error("Unexpected message received ~p", [Message]),
@@ -132,35 +150,39 @@ handle_info(Message, State) ->
 
 %% Implementation
 
-do_observe(State = #state{oid = Oid}) ->
-    fun (Buffer) ->
-        case do_examine(State) of
-            [{Oid, {_, Value}}] ->
-                FreshBuffer = do_store(Value, Buffer, State),
-                {ok, FreshBuffer};
-            [] ->
-                {error, not_accessible};
-            Error ->
-                Error
-        end
+do_observe(User, Agent, Oid, Interval) ->
+    case catch websinema_bindings:examine(User, Agent, [Oid], Interval div 2) of
+        [{Oid, {_, Value}}] ->
+            {ok, Value};
+        [] ->
+            {error, not_accessible};
+        Error ->
+            Error
     end.
-
-do_examine(#state{user = User, agent = Agent, oid = Oid}) ->
-    catch websinema_bindings:examine(User, Agent, [Oid]).
 
 do_watchtime(Pid, #state{interval = Interval, rule = {watch, _}}) ->
     timer:send_interval(Interval, Pid, watchtime);
 do_watchtime(_, _) ->
     undefined.
 
+do_store(Value, Buffer, State) when not is_list(Buffer) ->
+    do_store(Value, [], State);
 do_store(Value, Buffer, #state{backlog = Backlog, rule = {_, buffer}}) ->
     [do_store(Value) | lists:sublist(Buffer, Backlog - 1)];
 do_store(Value, _, _) ->
     [do_store(Value)].
 
+do_store(Value = {_, _}) ->
+    Value;
 do_store(Value) ->
+    {timestamp(), Value}.
+
+timestamp() ->
     {Megas, Secs, _} = erlang:now(),
-    {Megas * 1000000 + Secs, Value}.
+    Megas * 1000000 + Secs.
+
+fetch(Error = {error, _}, _, _) ->
+    Error;
 
 fetch([Value | _], last, _) ->
     Value;
