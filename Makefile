@@ -16,6 +16,3 @@ clean:
 
 distclean: clean
 	rm -rfv ebin deps
-
-config:
-	cp -fv default.config.example default.config
