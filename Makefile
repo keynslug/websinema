@@ -1,6 +1,6 @@
 REBAR=./rebar
 
-.PHONY: all compile get-deps clean distclean config
+.PHONY: all compile get-deps clean distclean
 
 all: clean compile
 
