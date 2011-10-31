@@ -21,10 +21,14 @@ Ext.define('Websinema.view.Charts', {
     alias: 'widget.chartsView',
     
     requires: [
+        'Ext.button.Cycle',
         'Ext.panel.Panel',
         'Websinema.SmartTime',
         'Ext.chart.Chart',
-        'Ext.chart.series.Line'
+        'Ext.chart.series.Line',
+        'Ext.chart.axis.Numeric',
+        'Ext.chart.theme.Base',
+        'Ext.toolbar.TextItem'
     ],
     
     autoScroll: true,
@@ -40,10 +44,7 @@ Ext.define('Websinema.view.Charts', {
                 {text: '15 sec', value: 15000},
                 {text: 'Suspend', value: 0}
             ]
-        }},
-        '->'
-//        {xtype: 'button', text: 'One column', enableToggle: true, toggleGroup: 'columnsLayout', pressed: true},
-//        {xtype: 'button', text: 'Two columns', enableToggle: true, toggleGroup: 'columnsLayout'}
+        }}
     ],
     
     items: [

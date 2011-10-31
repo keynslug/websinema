@@ -21,6 +21,7 @@ Ext.define('Websinema.view.Agents', {
     alias: 'widget.agentsView',
     
     requires: [
+        'Ext.layout.container.Accordion',
         'Ext.tree.Panel'
     ],
     

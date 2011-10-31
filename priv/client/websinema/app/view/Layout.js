@@ -19,7 +19,10 @@ Ext.define('Websinema.view.Layout', {
     
     extend: 'Ext.panel.Panel',
     alias: 'widget.appLayout',
-    requires: ['Websinema.view.Agents'],
+    requires: [
+        'Ext.layout.container.Border',
+        'Websinema.view.Agents'
+    ],
     
     layout: 'fit',
     
