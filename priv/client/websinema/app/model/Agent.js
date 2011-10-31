@@ -64,6 +64,7 @@ Ext.data.Types.MetricsTree = {
 
 Ext.define('Websinema.model.Agent', {
     extend: 'Ext.data.Model',
+    requires: ['Websinema.model.Measure'],
     fields: [
         {name: 'name', type: 'string'},
         {name: 'active', type: 'boolean', defaultValue: true},

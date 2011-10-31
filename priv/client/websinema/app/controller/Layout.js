@@ -24,13 +24,19 @@ Ext.define('Websinema.controller.Layout', {
         'Agent'
     ],
     
+    views: [
+        'Agents',
+        'Charts',
+        'Layout'
+    ],
+    
     stores: [
         'Agents'
     ],
     
     refs: [
-        {ref: 'agentsView', selector: 'agentsView'},
-        {ref: 'chartsView', selector: 'chartsView'}
+        {ref: 'agentsViewObject', selector: 'agentsView'},
+        {ref: 'chartsViewObject', selector: 'chartsView'}
     ],
     
     init: function () {
@@ -46,7 +52,9 @@ Ext.define('Websinema.controller.Layout', {
         
         this.proto.on('metrics', this.handleMetrics, this);
         this.proto.on('refresh', this.handleRefresh, this);
-        this.proto.getAgents(Ext.bind(this.handleAgents, this));
+        Websinema.Websocket.on('online', function () { 
+            this.proto.getAgents(Ext.bind(this.handleAgents, this));
+        }, this)
     },
     
     handleAgents: function (data) {
@@ -93,7 +101,7 @@ Ext.define('Websinema.controller.Layout', {
                 var backlog = message.message.value[0];
                 this.handleMetrics(backlog.name, backlog.metrics);
                 this.subscription[uid] = metric;
-                this.getChartsView().createRenderer(name, metric);
+                this.getChartsViewObject().createRenderer(name, metric);
             }, this), this.refreshInterval, name, metric.sid, true);
         }
     },
@@ -103,7 +111,7 @@ Ext.define('Websinema.controller.Layout', {
         if (this.subscription[uid]) {
             console.debug("Unsubscribing from: ", uid);
             this.proto.subscribe(Ext.bind(function () {
-                this.getChartsView().destroyRenderer(name, metric.id);
+                this.getChartsViewObject().destroyRenderer(name, metric.id);
                 this.subscription[uid] = undefined;
             }, this), this.refreshInterval, name, metric.sid, false);
         }
@@ -117,7 +125,7 @@ Ext.define('Websinema.controller.Layout', {
             
             'appLayout button#agentsCollapse' : {
                 click: Ext.bind(function () {
-                    this.getAgentsView().toggleCollapse();
+                    this.getAgentsViewObject().toggleCollapse();
                 }, this)
             },
             
@@ -136,7 +144,7 @@ Ext.define('Websinema.controller.Layout', {
         this.getAgentsStore().on({
         
             'add': Ext.bind(function (store, records) {
-                var view = this.getAgentsView();
+                var view = this.getAgentsViewObject();
                 for (var i in records) {
                     view.newAgent(records[i]);
                 }
@@ -167,7 +175,7 @@ Ext.define('Websinema.controller.Layout', {
     },
     
     doRefresh: function (interval) {
-        var view = this.getChartsView();
+        var view = this.getChartsViewObject();
         if (view) {
             view.refreshRenderers(interval);
         }

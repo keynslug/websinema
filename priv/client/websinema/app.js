@@ -25,47 +25,49 @@ Ext.require([
 Ext.onReady(function () {
     console.debug("Starting application...");
     
-    var connectSucceed = function () {
-        Ext.application({
-        
-            name: 'Websinema',
-            appFolder: 'app',
+    Ext.application({
+    
+        name: 'Websinema',
+        appFolder: 'app',
 
-            controllers: [
-                'Layout'
-            ],
+        requires: [
+            'Websinema.Websocket'
+        ],
+
+        controllers: [
+            'Layout'
+        ],
+    
+        launch: function () {
+            var listeners = {
+                online: function () {
+                    Ext.create('Ext.container.Viewport', {
+                        layout: 'fit',
+                        items: { xtype: 'appLayout' }
+                    })
+                },
+                offline: function (reason) {
+                    Ext.Msg.alert('Error', 'The application failed to start since websockets are ' + reason);
+                }
+            };
+            
+            Websinema.Websocket.init(listeners);
+        },
         
-            launch: function () {
-                Ext.create('Ext.container.Viewport', {
-                    layout: 'fit',
-                    items: { xtype: 'appLayout' }
-                });
-            },
-            
-            reportError: function (through, message) {
-                var text = Ext.String.format(
-                    'Error occured while requesting server through websocket:' + 
-                    '<br /><br />Request: <b>{0}</b><br />Reason: <b>{1}</b><br />Payload:<br /><pre>{2}</pre>',
-                    through, message.reason, message.origin
-                );
-                Ext.Msg.show({
-                    title: 'Data Transfer Error',
-                    msg: text,
-                    buttons: Ext.Msg.OK,
-                    animateTarget: 'messageSource',
-                    icon: Ext.window.MessageBox.ERROR
-                });
-            }
-            
-        });
-    }
-    
-    var listeners = {
-        online: connectSucceed,
-        offline: function (reason) {
-            Ext.Msg.alert('Error', 'The application failed to start since websockets are ' + reason);
+        reportError: function (through, message) {
+            var text = Ext.String.format(
+                'Error occured while requesting server through websocket:' + 
+                '<br /><br />Request: <b>{0}</b><br />Reason: <b>{1}</b><br />Payload:<br /><pre>{2}</pre>',
+                through, message.reason, message.origin
+            );
+            Ext.Msg.show({
+                title: 'Data Transfer Error',
+                msg: text,
+                buttons: Ext.Msg.OK,
+                animateTarget: 'messageSource',
+                icon: Ext.window.MessageBox.ERROR
+            });
         }
-    };
-    
-    Websinema.Websocket.init(listeners);
+        
+    });
 });

@@ -20,6 +20,10 @@ Ext.define('Websinema.view.Agents', {
     extend: 'Ext.panel.Panel',
     alias: 'widget.agentsView',
     
+    requires: [
+        'Ext.tree.Panel'
+    ],
+    
     layout: 'accordion',
     defaults: {
         bodyStyle: 'padding:2px'

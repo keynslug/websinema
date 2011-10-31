@@ -19,7 +19,11 @@ Ext.define('Websinema.SmartTime', {
 
     extend: 'Ext.chart.axis.Time',
     alias: 'axis.websinema.smarttime',
-    requires: ['Ext.data.Store', 'Ext.data.JsonStore'],
+    requires: [
+        'Ext.chart.axis.Time',
+        'Ext.data.Store', 
+        'Ext.data.JsonStore'
+    ],
 
     calculateByLabelSize: true,
     

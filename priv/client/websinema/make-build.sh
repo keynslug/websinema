@@ -5,6 +5,6 @@ CWD=`pwd`
 DIR=$(dirname `which phantomjs`)
 cd $DIR
 
-./phantomjs appbuilder/ext-app-builder.js -app-entry http://$ENTRY/ -project $CWD/$PROJECT.jsb3
+./phantomjs appbuilder/ext-app-builder.js -app-entry $ENTRY -project $CWD/$PROJECT.jsb3
 ./jsdb -path jsbuilder jsbuilder/bin/JSBuilder.js -p $CWD/$PROJECT.jsb3 -d $CWD
 

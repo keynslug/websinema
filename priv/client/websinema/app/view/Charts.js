@@ -20,6 +20,13 @@ Ext.define('Websinema.view.Charts', {
     extend: 'Ext.panel.Panel',
     alias: 'widget.chartsView',
     
+    requires: [
+        'Ext.panel.Panel',
+        'Websinema.SmartTime',
+        'Ext.chart.Chart',
+        'Ext.chart.series.Line'
+    ],
+    
     autoScroll: true,
 
     bodyCls: 'chartsView',    
