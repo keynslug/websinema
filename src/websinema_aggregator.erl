@@ -236,7 +236,8 @@ start(agents, Options, State) ->
                          Props = {Name, [ {remote, Opts}, {bindings, Discovery}, {observers, Observers} ]},
                          [Props | Ready];
                      Error ->
-                       lager:error("The agent ~p has not been registered because of ~p", [Agent, Error])
+                       lager:error("The agent ~p has not been registered because of ~p", [Agent, Error]),
+                       Ready
                  end
         end,
         [], Agents

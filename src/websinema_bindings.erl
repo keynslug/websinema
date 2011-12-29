@@ -23,6 +23,7 @@
 
 -define(NEXT_ANY_OID, [0, 0, 0]).
 -define(SUBTREE_TID, 'OBJECT IDENTIFIER').
+-define(DISCOVERY_TIMEOUT, 800).
 
 discover(User, Agent) ->
     discover(User, Agent, []).
@@ -79,8 +80,9 @@ varname(List) when is_list(List) ->
 %% Internals
 
 discover(A = {User, Agent}, OID, Tree, Options) ->
-    case snmpm:sync_get_next(User, Agent, [OID]) of
+    case snmpm:sync_get_next(User, Agent, [OID], ?DISCOVERY_TIMEOUT) of
         {ok, Pdu, _} -> 
+            lager:debug("Discovered new object after ~p", [varalias(OID)]),
             case object(Pdu, relax) of
                 {error, {object_ignored, NextOID}} -> 
                     discover(A, NextOID, Tree, Options);
@@ -93,7 +95,11 @@ discover(A = {User, Agent}, OID, Tree, Options) ->
                 {NextOID, Object} ->
                     discover(A, NextOID, [{NextOID, Object} | Tree], Options)
             end;
-        Error     -> throw(Error)
+        {error, {timeout, _}} ->
+            lager:debug("Discovery after ~p has been timed out, retrying...", [varalias(OID)]),
+            discover(A, OID, Tree, Options);
+        {error, Error} ->
+            throw(Error)
     end.
 
 objects({noError, _, Objects}) when is_list(Objects) ->
